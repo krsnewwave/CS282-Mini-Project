@@ -1,0 +1,10 @@
+0	_Sample_0000_0001.jpg
+1	_Sample_0001_0002.jpg
+2	_Sample_0002_0001.jpg
+3	_Sample_0003_0001.jpg
+4	_Sample_0004_0001.jpg
+5	_Sample_0005_0001.jpg
+6	_Sample_0006_0002.jpg
+7	_Sample_0007_0001.jpg
+8	_Sample_0008_0001.jpg
+9	_Sample_0009_0001.jpg

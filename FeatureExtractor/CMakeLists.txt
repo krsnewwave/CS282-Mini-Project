@@ -8,6 +8,13 @@ find_package(OpenGL REQUIRED)
 
 #add_library(utils utils.hpp utils.cpp)
 
-set(SOURCE_FILES feature_extractor.cc)
-add_executable(feature_extractor ${SOURCE_FILES})
+set(EXTRACTOR_FILES feature_extractor.cc feature_extractor.h sampler.cc sampler.h
+opencv_sift_extractor.cc opencv_sift_extractor.h)
+add_executable(feature_extractor ${EXTRACTOR_FILES})
 target_link_libraries(feature_extractor ${OpenCV_LIBS})
+
+set(EVALUATOR_FILES evaluator.cc evaluator.h sampler.cc sampler.h
+opencv_sift_extractor.cc opencv_sift_extractor.h)
+add_executable(evaluator ${EVALUATOR_FILES})
+target_link_libraries(evaluator ${OpenCV_LIBS})
+
