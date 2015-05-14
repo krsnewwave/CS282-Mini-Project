@@ -33,7 +33,9 @@ Mat FeatureExtractor::extract_features(string sample_file, string imgdir) {
         //convert to ycrcb
         Mat result = siftExtractor.equalizeUsingYCBCR(img);
         //get their color and gray sift features
-        Mat colorSift = siftExtractor.getSIFTDescriptor(result);
+        Mat colorSift;
+        vector<KeyPoint> keyPoints;
+        siftExtractor.getSIFTDescriptor(result,colorSift,keyPoints);
         //disregarding gray for now, I can't concat them below
         //        Mat gray;
         //        cvtColor(img, gray, CV_RGB2GRAY);
@@ -80,7 +82,9 @@ Mat FeatureExtractor::create_training_descriptors(Dataset ds, Mat dict) {
         string file = get<1>(ds[i]);
         Mat img = imread(file, CV_LOAD_IMAGE_COLOR);
         Mat result = siftExtractor.equalizeUsingYCBCR(img);
-        Mat sift_descriptors = siftExtractor.getSIFTDescriptor(result);
+        Mat sift_descriptors;
+        vector<KeyPoint> keyPoints;
+        siftExtractor.getSIFTDescriptor(result, sift_descriptors, keyPoints);
 
         //create a nearest neighbor matcher
         FlannBasedMatcher matcher;

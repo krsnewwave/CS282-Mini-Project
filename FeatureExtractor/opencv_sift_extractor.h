@@ -19,10 +19,11 @@
 class OpenCVSIFTDescExtractor {
 public:
     OpenCVSIFTDescExtractor(int nfeatures = 0,
-        int nOctaveLayers = 3, double contrastThreshold = 0.04,
-        double edgeThreshold = 10, double sigma = 1.6);
+            int nOctaveLayers = 3, double contrastThreshold = 0.04,
+            double edgeThreshold = 10, double sigma = 1.6);
     virtual ~OpenCVSIFTDescExtractor();
-    cv::Mat getSIFTDescriptor(cv::Mat image);
+    cv::Mat getSIFTDescriptor(const cv::Mat& image, cv::Mat& dst,
+            std::vector<cv::KeyPoint>& keyPoints);
     cv::Mat equalizeUsingYCBCR(cv::Mat img);
 private:
     cv::SiftDescriptorExtractor detector;

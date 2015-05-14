@@ -26,13 +26,12 @@ OpenCVSIFTDescExtractor::~OpenCVSIFTDescExtractor() {
  * @param image
  * @return 
  */
-Mat OpenCVSIFTDescExtractor::getSIFTDescriptor(Mat image) {
+Mat OpenCVSIFTDescExtractor::getSIFTDescriptor(const Mat& image, Mat& dst,
+        vector<KeyPoint>& keypoints) {
     Mat sift_descriptors;
-    vector<KeyPoint> keypoints;
-
     detector.detect(image, keypoints);
     detector.compute(image, keypoints, sift_descriptors);
-    return sift_descriptors;
+    dst = sift_descriptors;
 }
 
 Mat OpenCVSIFTDescExtractor::equalizeUsingYCBCR(cv::Mat img) {
