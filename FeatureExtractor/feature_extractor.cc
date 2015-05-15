@@ -6,6 +6,7 @@
  */
 
 #include "feature_extractor.h"
+#include <set>
 
 using namespace std;
 using namespace cv;
@@ -35,7 +36,7 @@ Mat FeatureExtractor::extract_features(string sample_file, string imgdir) {
         //get their color and gray sift features
         Mat colorSift;
         vector<KeyPoint> keyPoints;
-        siftExtractor.getSIFTDescriptor(result,colorSift,keyPoints);
+        siftExtractor.getSIFTDescriptor(result, colorSift, keyPoints);
         //disregarding gray for now, I can't concat them below
         //        Mat gray;
         //        cvtColor(img, gray, CV_RGB2GRAY);
@@ -75,7 +76,7 @@ Mat FeatureExtractor::create_dictionary(Mat features) {
 
 Mat FeatureExtractor::create_training_descriptors(Dataset ds, Mat dict) {
     Mat training_features;
-     cout << "Constructing Training Descriptors..... " << endl << endl;
+    cout << "Constructing Training Descriptors..... " << endl << endl;
     //prepare the sift extractor
     OpenCVSIFTDescExtractor siftExtractor(2000, 3, 0.004);
     for (int i = 0; i < ds.size(); i++) {
@@ -104,9 +105,40 @@ Mat FeatureExtractor::create_training_descriptors(Dataset ds, Mat dict) {
         normalize(norm_bins, norm_bins, 0, 1, NORM_MINMAX, -1, Mat());
         training_features.push_back(norm_bins);
     }
-    
+
     cout << "Training features size: " << training_features.size() << endl;
     return training_features;
+}
+
+Ptr<FaceRecognizer> FeatureExtractor::trainLBPModel(
+        string sample_file, string imgdir) {
+    cout << "Training LBP model" << endl;
+    OpenCVLBPDescExtractor lbpModel;
+    //sample all images
+    Sampler sampler;
+    Dataset ds = sampler.getDataset(sample_file, imgdir);
+    vector<Mat> images;
+    vector<int> labels;
+    map<string, int> categoryMap;
+    for (int i = 0, j = 0; i < ds.size(); i++) {
+        //read images
+        string file_name = get<1>(ds[i]);
+        Mat img = imread(file_name, CV_LOAD_IMAGE_GRAYSCALE);
+        //equalize
+        Mat imgEq;
+        equalizeHist(img, imgEq);
+        images.push_back(imgEq);
+        //add to the category set, assign to category -> number map
+        string cat = get<0>(ds[i]);
+        auto search = categoryMap.find(cat);
+        if (search != categoryMap.end()) {
+            labels.push_back(search->second);
+        } else {
+            categoryMap[cat] = ++j;
+            labels.push_back(j);
+        }
+    }
+    return lbpModel.trainLBP(images, labels);
 }
 
 /** @function main 
@@ -152,6 +184,11 @@ int main(int argc, char** argv) {
         FileStorage fs2(output_training_desc, FileStorage::WRITE);
         fs2 << "training_set" << training_features;
         fs2.release();
+    } else if (feature_type == "lbp") {
+        Ptr<FaceRecognizer> faceRecognizer =
+                fe.trainLBPModel(sample_file, imgdir);
+        //store the model to the output
+        faceRecognizer->save(output_training_desc);
     }
     return 0;
 }

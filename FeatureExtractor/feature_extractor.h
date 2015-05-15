@@ -17,7 +17,9 @@
 #include <opencv2/highgui/highgui.hpp>
 #include <cv.h>
 #include <stdio.h>
+#include "opencv2/contrib/contrib.hpp"
 
+#include "opencv_lbp_extractor.h"
 #include "opencv_sift_extractor.h"
 #include "sampler.h"
 
@@ -30,6 +32,7 @@ public:
     cv::Mat extract_features(string sample_file, string imgdir);
     cv::Mat create_dictionary(cv::Mat features);
     cv::Mat create_training_descriptors(Dataset ds, cv::Mat dict);
+    cv::Ptr<cv::FaceRecognizer> trainLBPModel(string sample_file, string imgdir);
 };
 
 
