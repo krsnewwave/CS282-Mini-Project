@@ -7,7 +7,8 @@
 #include "sampler.h"
 #include <sstream>
 #include <fstream>
-#include "utils.cc"
+
+using namespace std;
 
 Sampler::Sampler() {
 }
@@ -18,8 +19,7 @@ Sampler::Sampler(const Sampler& orig) {
 Sampler::~Sampler() {
 }
 
-Dataset Sampler::getDataset(string sample_file_name,
-        string imgdir) {
+Dataset Sampler::getDataset(string sample_file_name,string imgdir) {
     Dataset ds;
     ifstream file(sample_file_name);
     string str;

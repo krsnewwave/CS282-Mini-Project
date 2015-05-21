@@ -1,9 +1,12 @@
 
 #include <string>
 #include <sstream>
+#include <fstream>
 #include <vector>
+#include <stdlib.h>
+#include <map>
 
-std::vector<std::string> &split(const std::string &s, char delim, 
+inline std::vector<std::string> &split(const std::string &s, char delim,
         std::vector<std::string> &elems) {
     std::stringstream ss(s);
     std::string item;
@@ -13,8 +16,37 @@ std::vector<std::string> &split(const std::string &s, char delim,
     return elems;
 }
 
-std::vector<std::string> split(const std::string &s, char delim) {
+inline std::vector<std::string> split(const std::string &s, char delim) {
     std::vector<std::string> elems;
     split(s, delim, elems);
     return elems;
+}
+
+inline void categoryMap(std::string sample_file_name,
+        std::map<std::string, int>& categories) {
+    std::ifstream file(sample_file_name);
+    std::string cat;
+    int i = 0;
+    while (getline(file, cat)) {
+        categories[cat] = ++i;
+    }
+}
+
+template <typename M, typename V>
+void map_values_to_vec(const M & m, V & v) {
+    for (typename M::const_iterator it = m.begin(); it != m.end(); ++it) {
+        v.push_back(it->second);
+    }
+}
+
+inline std::string get_associated_key(std::map<std::string, int> categories,
+        int predicted) {
+    for (std::map<std::string, int>::const_iterator it = categories.begin();
+            it != categories.end(); ++it) {
+        // Repeat if you also want to iterate through the second map.
+        if (it->second == static_cast<int> (predicted)) {
+            return it->first;
+        }
+    }
+    return "N/A";
 }

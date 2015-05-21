@@ -4,10 +4,10 @@ project(FeatureExtractor)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 find_package(OpenCV REQUIRED core imgproc highgui calib3d 
-        features2d nonfree contrib)
+        features2d nonfree contrib ml)
 find_package(OpenGL REQUIRED)
 
-#add_library(utils utils.hpp utils.cpp)
+#add_library(utils utils.h utils.cc)
 
 set(EXTRACTOR_FILES feature_extractor.cc feature_extractor.h sampler.cc sampler.h
         opencv_sift_extractor.cc opencv_sift_extractor.h 

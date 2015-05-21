@@ -8,6 +8,7 @@
 #ifndef OPENCVSIFTDESCEXTRACTOR_H
 #define	OPENCVSIFTDESCEXTRACTOR_H
 
+#include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
 #include <opencv2/imgproc/imgproc.hpp>
@@ -22,8 +23,10 @@ public:
             int nOctaveLayers = 3, double contrastThreshold = 0.04,
             double edgeThreshold = 10, double sigma = 1.6);
     virtual ~OpenCVSIFTDescExtractor();
-    cv::Mat getSIFTDescriptor(const cv::Mat& image, cv::Mat& dst,
+    void getSIFTDescriptor(const cv::Mat& image, cv::Mat& dst,
             std::vector<cv::KeyPoint>& keyPoints);
+    void process_images(const std::vector<cv::Mat>& images,
+            const cv::Mat& dict, cv::Mat& dst);
     cv::Mat equalizeUsingYCBCR(cv::Mat img);
 private:
     cv::SiftDescriptorExtractor detector;

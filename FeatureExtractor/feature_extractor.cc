@@ -30,13 +30,19 @@ Mat FeatureExtractor::extract_features(string sample_file, string imgdir) {
     for (int i = 0; i < ds.size(); i++) {
         //read each file
         string file_name = get<1>(ds[i]);
+        //continue if file does not exist (useful for a single sample file)
+        ifstream f(file_name);
+        if (!f.good()) {
+            continue;
+        }
+        cout << "Reading: " << file_name << endl;
         Mat img = imread(file_name, CV_LOAD_IMAGE_COLOR);
         //convert to ycrcb
-        Mat result = siftExtractor.equalizeUsingYCBCR(img);
+        //        Mat result = siftExtractor.equalizeUsingYCBCR(img);
         //get their color and gray sift features
         Mat colorSift;
         vector<KeyPoint> keyPoints;
-        siftExtractor.getSIFTDescriptor(result, colorSift, keyPoints);
+        siftExtractor.getSIFTDescriptor(img, colorSift, keyPoints);
         //disregarding gray for now, I can't concat them below
         //        Mat gray;
         //        cvtColor(img, gray, CV_RGB2GRAY);
@@ -74,53 +80,46 @@ Mat FeatureExtractor::create_dictionary(Mat features) {
     return dictionary;
 }
 
-Mat FeatureExtractor::create_training_descriptors(Dataset ds, Mat dict) {
+Mat FeatureExtractor::create_training_descriptors(Dataset ds, Mat dict,
+        const map<string, int>& categoryMap, vector<int>& classes) {
     Mat training_features;
     cout << "Constructing Training Descriptors..... " << endl << endl;
     //prepare the sift extractor
-    OpenCVSIFTDescExtractor siftExtractor(2000, 3, 0.004);
+    OpenCVSIFTDescExtractor siftExtractor;
+    vector<Mat> images;
     for (int i = 0; i < ds.size(); i++) {
         string file = get<1>(ds[i]);
-        Mat img = imread(file, CV_LOAD_IMAGE_COLOR);
-        Mat result = siftExtractor.equalizeUsingYCBCR(img);
-        Mat sift_descriptors;
-        vector<KeyPoint> keyPoints;
-        siftExtractor.getSIFTDescriptor(result, sift_descriptors, keyPoints);
-
-        //create a nearest neighbor matcher
-        FlannBasedMatcher matcher;
-        vector< DMatch > matches;
-        matcher.match(sift_descriptors, dict, matches);
-
-        //group to bins
-        //        float bins[dict.rows] = {0.0};
-        float bins[dict.rows];
-
-        //update number of bins
-        for (int i = 0; i < matches.size(); i++) {
-            bins[matches.at(i).trainIdx] = bins[matches.at(i).trainIdx] + 1;
+        //continue if file does not exist (useful for a single sample file)
+        ifstream f(file);
+        if (!f.good()) {
+            continue;
         }
-
-        Mat norm_bins(1, dict.rows, CV_32F, &bins);
-        normalize(norm_bins, norm_bins, 0, 1, NORM_MINMAX, -1, Mat());
-        training_features.push_back(norm_bins);
+        Mat img = imread(file, CV_LOAD_IMAGE_COLOR);
+        //        Mat result = siftExtractor.equalizeUsingYCBCR(img);
+        images.push_back(img);
+        //assign to category -> number map
+        string cat = get<0>(ds[i]);
+        auto search = categoryMap.find(cat);
+        if (search == categoryMap.end()) {
+            throw new runtime_error("Category string not recognized.");
+        }
+        classes.push_back(search->second);
     }
+    siftExtractor.process_images(images, dict, training_features);
 
     cout << "Training features size: " << training_features.size() << endl;
     return training_features;
 }
 
-Ptr<FaceRecognizer> FeatureExtractor::trainLBPModel(
-        string sample_file, string imgdir) {
+Ptr<FaceRecognizer> FeatureExtractor::trainLBPModel(string sample_file,
+        string imgdir, const map<string, int>& categoryMap, vector<int>& classes) {
     cout << "Training LBP model" << endl;
     OpenCVLBPDescExtractor lbpModel;
     //sample all images
     Sampler sampler;
     Dataset ds = sampler.getDataset(sample_file, imgdir);
     vector<Mat> images;
-    vector<int> labels;
-    map<string, int> categoryMap;
-    for (int i = 0, j = 0; i < ds.size(); i++) {
+    for (int i = 0; i < ds.size(); i++) {
         //read images
         string file_name = get<1>(ds[i]);
         Mat img = imread(file_name, CV_LOAD_IMAGE_GRAYSCALE);
@@ -128,42 +127,63 @@ Ptr<FaceRecognizer> FeatureExtractor::trainLBPModel(
         Mat imgEq;
         equalizeHist(img, imgEq);
         images.push_back(imgEq);
-        //add to the category set, assign to category -> number map
+        //assign to category -> number map
         string cat = get<0>(ds[i]);
         auto search = categoryMap.find(cat);
-        if (search != categoryMap.end()) {
-            labels.push_back(search->second);
-        } else {
-            categoryMap[cat] = ++j;
-            labels.push_back(j);
+        if (search == categoryMap.end()) {
+            throw new runtime_error("Category string not recognized.");
         }
+        classes.push_back(search->second);
     }
-    return lbpModel.trainLBP(images, labels);
+
+    return lbpModel.trainLBP(images, classes);
 }
 
 /** @function main 
  arguments [sample_file] [img_dir] [feature type]
- *  [create-dictionary] [output-training-descriptors]
+ *  [create-dictionary] [categories] [output-training-descriptors] [output-model]
  */
 int main(int argc, char** argv) {
     FeatureExtractor fe;
+
+    if (argc == 1) {
+        cout << "Usage: [sample_file] [img_dir] [feature type] "
+                "[create-dictionary] [categories] [output-training-descriptors]"
+                " [output-model]" << endl;
+        return 0;
+    }
+
     string sample_file = argv[1];
     string imgdir = argv[2];
     string feature_type = argv[3];
     string dictionary_file_name = argv[4];
-    string output_training_desc = argv[5];
+    string category_file_name = argv[5];
+    string output_training_desc = argv[6];
+    string output_model = argv[7];
+
+    /*--
+     * Loading category file
+     * --
+     */
+    map<string, int> categories;
+    categoryMap(category_file_name, categories);
+
+    std::clock_t start2;
 
     /*--
      * Algorithm for extracting SIFT-only vocabulary and training set
      * --
      */
     if (feature_type == "sift") {
-        Mat features = fe.extract_features(sample_file, imgdir);
+        cout << "SIFT Extraction" << endl;
         //construct dictionary, write to file, if dictionary not available
         ifstream dict_file(dictionary_file_name);
         Mat dict;
         if (!dict_file.good()) {
+            start2 = std::clock();
+            Mat features = fe.extract_features(sample_file, imgdir);
             dict = fe.create_dictionary(features);
+            printf("Dictionary creation lasted: %.3f ms\r\n", (std::clock() - start2) / 1000.0);
             //store the vocabulary
             FileStorage fs(dictionary_file_name, FileStorage::WRITE);
             fs << "vocabulary" << dict;
@@ -179,16 +199,30 @@ int main(int argc, char** argv) {
         Mat training_features;
         Sampler sampler;
         Dataset training = sampler.getDataset(sample_file, imgdir);
-        training_features = fe.create_training_descriptors(training, dict);
+        vector<int> classes;
+        start2 = std::clock();
+        training_features = fe.create_training_descriptors(training, dict,
+                categories, classes);
         //store the training features
         FileStorage fs2(output_training_desc, FileStorage::WRITE);
         fs2 << "training_set" << training_features;
         fs2.release();
+
+        //copy contents of vector to float array
+        printf("Training set extraction lasted : %.3f ms\r\n", (std::clock() - start2) / 1000.0);
+
     } else if (feature_type == "lbp") {
+        vector<int> classes;
         Ptr<FaceRecognizer> faceRecognizer =
-                fe.trainLBPModel(sample_file, imgdir);
+                fe.trainLBPModel(sample_file, imgdir, categories, classes);
         //store the model to the output
         faceRecognizer->save(output_training_desc);
+        //store the training dataset
+        Mat dst = faceRecognizer->getMat("histograms");
+        //store the training features
+        FileStorage fs2(output_training_desc, FileStorage::WRITE);
+        fs2 << "training_set" << dst;
+        fs2.release();
     }
     return 0;
 }
