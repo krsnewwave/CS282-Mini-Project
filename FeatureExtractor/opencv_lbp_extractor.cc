@@ -35,10 +35,19 @@ template <typename _Tp> void OpenCVLBPDescExtractor::lbp(
     }
 }
 
-Mat OpenCVLBPDescExtractor::getOLBPDescriptor(const Mat& image, Mat& dst,
-        const std::vector<KeyPoint>& keyPoints, int patchSize) {
+void OpenCVLBPDescExtractor::getOLBPDescriptorsFromImages(const vector<Mat>& images,
+        const vector<KeyPoint>& keyPoints, Mat& dst, int patchSize) {
+    for (int i = 0; i < images.size(); i++) {
+        Mat dst1;
+        getOLBPDescriptor(images[i], dst1, keyPoints, patchSize);
+        dst.push_back(dst1);
+    }
+}
+
+void OpenCVLBPDescExtractor::getOLBPDescriptor(const Mat& image, Mat& dst,
+        const vector<KeyPoint>& keyPoints, int patchSize) {
     Mat lbpimg, patch, lbp_descriptors;
-    lbp<unsigned char>(image, dst);
+    lbp<unsigned char>(image, lbpimg);
     Size size = Size(patchSize, patchSize);
     for (int i = 0; i < keyPoints.size(); i++) {
         Point2f center(keyPoints.at(i).pt.x, keyPoints.at(i).pt.y);
@@ -58,7 +67,7 @@ Ptr<FaceRecognizer> OpenCVLBPDescExtractor::trainLBP(const vector<Mat>& images,
     return lbp_recog;
 }
 
-void OpenCVLBPDescExtractor::getHistograms(Mat& dst){
-    if(lbp_recog != NULL)
+void OpenCVLBPDescExtractor::getHistograms(Mat& dst) {
+    if (lbp_recog != NULL)
         dst = lbp_recog->getMat("histogram");
 }

@@ -11,7 +11,9 @@ find_package(OpenGL REQUIRED)
 
 set(EXTRACTOR_FILES feature_extractor.cc feature_extractor.h sampler.cc sampler.h
         opencv_sift_extractor.cc opencv_sift_extractor.h 
-        opencv_lbp_extractor.h opencv_lbp_extractor.cc)
+        opencv_lbp_extractor.h opencv_lbp_extractor.cc
+        sift_lbp_extractor.h sift_lbp_extractor.cc
+        color_extractor.h color_extractor.cc)
 add_executable(feature_extractor ${EXTRACTOR_FILES})
 target_link_libraries(feature_extractor ${OpenCV_LIBS})
 

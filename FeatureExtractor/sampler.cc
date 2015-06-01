@@ -7,8 +7,10 @@
 #include "sampler.h"
 #include <sstream>
 #include <fstream>
+#include <boost/algorithm/string.hpp>
 
 using namespace std;
+using namespace boost::algorithm;
 
 Sampler::Sampler() {
 }
@@ -25,7 +27,11 @@ Dataset Sampler::getDataset(string sample_file_name,string imgdir) {
     string str;
     while (getline(file, str)) {
         vector<string> line = split(str, '\t');
-        tuple<string, string> t = make_tuple(line[0], imgdir + "/" + line[1]);
+        string cat =line[0];
+        trim(cat);
+        string file_name = imgdir + "/" + line[1];
+        trim(file_name);
+        tuple<string, string> t = make_tuple(cat, file_name);
         ds.push_back(t);
     }
     return ds;

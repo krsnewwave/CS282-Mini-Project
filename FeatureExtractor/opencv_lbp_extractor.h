@@ -21,9 +21,11 @@ class OpenCVLBPDescExtractor {
 public:
     OpenCVLBPDescExtractor();
     virtual ~OpenCVLBPDescExtractor();
-    cv::Mat getOLBPDescriptor(const cv::Mat& image, cv::Mat& dst,
-            const cv::vector<cv::KeyPoint>& keyPoints, int patchSize = 8);
-
+    void getOLBPDescriptor(const cv::Mat& image, cv::Mat& dst,
+            const std::vector<cv::KeyPoint>& keyPoints, int patchSize = 8);
+    void getOLBPDescriptorsFromImages(const std::vector<cv::Mat>& images,
+            const std::vector<cv::KeyPoint>& keyPoints,
+            cv::Mat& dst, int patchSize = 8);
     cv::Ptr<cv::FaceRecognizer> trainLBP(const std::vector<cv::Mat>& images,
             const std::vector<int>& labels, int radius = 1, int neighbors = 8,
             int sgrid_x = 8, int grid_y = 8, double threshold = DBL_MAX);

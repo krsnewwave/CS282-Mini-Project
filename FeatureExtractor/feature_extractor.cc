@@ -6,7 +6,12 @@
  */
 
 #include "feature_extractor.h"
+#include "sift_lbp_extractor.h"
+#include "opencv_lbp_extractor.h"
+#include "opencv_sift_extractor.h"
 #include <set>
+#include <boost/algorithm/string.hpp>
+
 
 using namespace std;
 using namespace cv;
@@ -19,7 +24,56 @@ FeatureExtractor::~FeatureExtractor() {
 
 }
 
-Mat FeatureExtractor::extract_features(string sample_file, string imgdir) {
+//Mat FeatureExtractor::extractLBPFeatures(string sample_file, string imgdir) {
+//    Sampler s;
+//    Dataset training = s.getDataset(sample_file, imgdir);
+//    vector<Mat> images;
+//    for (int i = 0; i < training.size(); i++) {
+//        string file = get<1>(training[i]);
+//        //read to gray scale
+//        cout << "Reading: " << file << endl;
+//        Mat img = imread(file, CV_LOAD_IMAGE_GRAYSCALE);
+//        Mat imgEq;
+//        equalizeHist(img, imgEq);
+//        images.push_back(imgEq);
+//    }
+//    OpenCVLBPDescExtractor lbpExtractor;
+//    Mat lbp_features;
+//    
+//    lbpExtractor.getOLBPDescriptorsFromImages(images, lbp_features);
+//    return lbp_features;
+//}
+//
+//Mat FeatureExtractor::extractLBPFeatures(const vector<Mat>& images) {
+//    Mat resolvedImages;
+//    for (int i = 0; i < images.size(); i++) {
+//        Mat grayIm;
+//        cvtColor(images[i], grayIm, CV_BGR2GRAY);
+//        Mat imgEq;
+//        equalizeHist(grayIm, imgEq);
+//        resolvedImages.push_back(imgEq);
+//    }
+//    OpenCVLBPDescExtractor lbpExtractor;
+//    Mat lbp_features;
+//    lbpExtractor.getOLBPDescriptorsFromImages(resolvedImages, lbp_features);
+//    return lbp_features;
+//}
+
+Mat FeatureExtractor::extractSIFTFeatures(const vector<Mat>& images) {
+    Mat siftFeatures;
+    OpenCVSIFTDescExtractor siftExtractor;
+    for (int i = 0; i < images.size(); i++) {
+        Mat img = images[i];
+        Mat dst;
+        vector<KeyPoint> keyPoints;
+        siftExtractor.getSIFTDescriptor(img, dst, keyPoints);
+        siftFeatures.push_back(dst);
+    }
+
+    return siftFeatures;
+}
+
+Mat FeatureExtractor::extractSIFTFeatures(string sample_file, string imgdir) {
     //get the Sampler
     Sampler sampler;
     Dataset ds = sampler.getDataset(sample_file, imgdir);
@@ -33,6 +87,7 @@ Mat FeatureExtractor::extract_features(string sample_file, string imgdir) {
         //continue if file does not exist (useful for a single sample file)
         ifstream f(file_name);
         if (!f.good()) {
+
             continue;
         }
         cout << "Reading: " << file_name << endl;
@@ -77,10 +132,40 @@ Mat FeatureExtractor::create_dictionary(Mat features) {
     //cluster the feature vectors
     Mat dictionary = bowTrainer.cluster(features);
     cout << "Dictionary size: " << dictionary.size() << endl;
+
     return dictionary;
 }
 
-Mat FeatureExtractor::create_training_descriptors(Dataset ds, Mat dict,
+Mat FeatureExtractor::createSiftLBPTrainingDescriptors(Dataset ds, Mat dict,
+        const map<string, int>& categoryMap, vector<int>& classes) {
+    Mat trainingFeatures;
+    cout << "Constructing training descriptors" << endl << endl;
+    OpenCVSIFTLBPExtractor siftLbpExtractor;
+    vector<Mat> images;
+    for (int i = 0; i < ds.size(); i++) {
+        string file = get<1>(ds[i]);
+        //continue if file does not exist (useful for a single sample file)
+        ifstream f(file);
+        if (!f.good()) {
+            continue;
+        }
+        Mat img = imread(file, CV_LOAD_IMAGE_COLOR);
+        //        Mat result = siftExtractor.equalizeUsingYCBCR(img);
+        images.push_back(img);
+        //assign to category -> number map
+        string cat = get<0>(ds[i]);
+        auto search = categoryMap.find(cat);
+        if (search == categoryMap.end()) {
+            throw new runtime_error("Category string not recognized.");
+        }
+        classes.push_back(search->second);
+    }
+    siftLbpExtractor.process_sift_lbp_images(images, dict, trainingFeatures);
+
+    return trainingFeatures;
+}
+
+Mat FeatureExtractor::createSiftTrainingDescriptors(Dataset ds, Mat dict,
         const map<string, int>& categoryMap, vector<int>& classes) {
     Mat training_features;
     cout << "Constructing Training Descriptors..... " << endl << endl;
@@ -108,6 +193,7 @@ Mat FeatureExtractor::create_training_descriptors(Dataset ds, Mat dict,
     siftExtractor.process_images(images, dict, training_features);
 
     cout << "Training features size: " << training_features.size() << endl;
+
     return training_features;
 }
 
@@ -122,21 +208,40 @@ Ptr<FaceRecognizer> FeatureExtractor::trainLBPModel(string sample_file,
     for (int i = 0; i < ds.size(); i++) {
         //read images
         string file_name = get<1>(ds[i]);
+        boost::algorithm::trim(file_name);
+        cout << "Reading " << file_name << endl;
         Mat img = imread(file_name, CV_LOAD_IMAGE_GRAYSCALE);
+
+        Mat resz;
+        if (getSize().area() == 0) {
+            resz = img;
+        } else {
+            resize(img, resz, getSize(), 0, 0, CV_INTER_AREA);
+        }
         //equalize
         Mat imgEq;
-        equalizeHist(img, imgEq);
+        equalizeHist(resz, imgEq);
         images.push_back(imgEq);
         //assign to category -> number map
         string cat = get<0>(ds[i]);
         auto search = categoryMap.find(cat);
         if (search == categoryMap.end()) {
+
+            cout << "Category string not recognized" << endl;
             throw new runtime_error("Category string not recognized.");
         }
         classes.push_back(search->second);
     }
 
     return lbpModel.trainLBP(images, classes);
+}
+
+Size FeatureExtractor::getSize() {
+    return FeatureExtractor::resizeSize;
+}
+
+void FeatureExtractor::setSize(Size size) {
+    FeatureExtractor::resizeSize = size;
 }
 
 /** @function main 
@@ -160,6 +265,14 @@ int main(int argc, char** argv) {
     string category_file_name = argv[5];
     string output_training_desc = argv[6];
     string output_model = argv[7];
+    if (argc == 9) {
+        vector<string> strs;
+        boost::split(strs, argv[8], boost::is_any_of("x"));
+        int x = atoi(strs[0].c_str());
+        int y = atoi(strs[1].c_str());
+        cout << "Resize option found: " << x << "x" << y << endl;
+        fe.setSize(Size(x, y));
+    }
 
     /*--
      * Loading category file
@@ -168,7 +281,7 @@ int main(int argc, char** argv) {
     map<string, int> categories;
     categoryMap(category_file_name, categories);
 
-    std::clock_t start2;
+    clock_t start2;
 
     /*--
      * Algorithm for extracting SIFT-only vocabulary and training set
@@ -180,10 +293,10 @@ int main(int argc, char** argv) {
         ifstream dict_file(dictionary_file_name);
         Mat dict;
         if (!dict_file.good()) {
-            start2 = std::clock();
-            Mat features = fe.extract_features(sample_file, imgdir);
+            start2 = clock();
+            Mat features = fe.extractSIFTFeatures(sample_file, imgdir);
             dict = fe.create_dictionary(features);
-            printf("Dictionary creation lasted: %.3f ms\r\n", (std::clock() - start2) / 1000.0);
+            printf("Dictionary creation lasted: %.3f ms\r\n", (clock() - start2) / 1000.0);
             //store the vocabulary
             FileStorage fs(dictionary_file_name, FileStorage::WRITE);
             fs << "vocabulary" << dict;
@@ -200,29 +313,153 @@ int main(int argc, char** argv) {
         Sampler sampler;
         Dataset training = sampler.getDataset(sample_file, imgdir);
         vector<int> classes;
-        start2 = std::clock();
-        training_features = fe.create_training_descriptors(training, dict,
+        start2 = clock();
+        training_features = fe.createSiftTrainingDescriptors(training, dict,
                 categories, classes);
         //store the training features
         FileStorage fs2(output_training_desc, FileStorage::WRITE);
-        fs2 << "training_set" << training_features;
+        fs2 << "features" << training_features;
         fs2.release();
 
         //copy contents of vector to float array
-        printf("Training set extraction lasted : %.3f ms\r\n", (std::clock() - start2) / 1000.0);
+        printf("Training set extraction lasted : %.3f ms\r\n", (clock() - start2) / 1000.0);
 
     } else if (feature_type == "lbp") {
         vector<int> classes;
         Ptr<FaceRecognizer> faceRecognizer =
                 fe.trainLBPModel(sample_file, imgdir, categories, classes);
         //store the model to the output
-        faceRecognizer->save(output_training_desc);
+        faceRecognizer->save(output_model);
         //store the training dataset
-        Mat dst = faceRecognizer->getMat("histograms");
+        vector<Mat> dst = faceRecognizer->getMatVector("histograms");
+        //store the training features
+        if (output_training_desc != "n/a") {
+            FileStorage fs2(output_training_desc, FileStorage::WRITE);
+            fs2 << "features" << dst;
+            fs2.release();
+        }
+    } else if (feature_type == "sift-lbp") {
+        cout << "SIFT-LBP mode" << endl;
+        ifstream dict_file(dictionary_file_name);
+        Mat dict;
+        if (!dict_file.good()) {
+            cout << "Creating dictionary " << endl;
+            start2 = clock();
+            //read images
+            Sampler s;
+            Dataset vocabDataset = s.getDataset(sample_file, imgdir);
+            vector<Mat> images;
+            for (int i = 0; i < vocabDataset.size(); i++) {
+                Mat img = imread(get<1>(vocabDataset[i]), CV_LOAD_IMAGE_COLOR);
+                images.push_back(img);
+            }
+            OpenCVSIFTLBPExtractor extractor;
+            OpenCVSIFTDescExtractor siftExtractor;
+            OpenCVLBPDescExtractor lbpExtractor;
+            Mat siftLbpFeatures;
+            extractor.create_sift_lpb_dictionary(images,
+                    siftExtractor, lbpExtractor, siftLbpFeatures);
+
+            dict = fe.create_dictionary(siftLbpFeatures);
+            printf("Dictionary creation lasted: %.3f ms\r\n", (clock() - start2) / 1000.0);
+            //store the vocabulary
+            FileStorage fs(dictionary_file_name, FileStorage::WRITE);
+            fs << "vocabulary" << dict;
+            fs.release();
+        } else {
+            //else, read to dict
+            FileStorage fs(dictionary_file_name, FileStorage::READ);
+            fs["vocabulary"] >> dict;
+            fs.release();
+        }
+
+        //construct training set descriptors
+        Sampler sampler;
+        Dataset training = sampler.getDataset(sample_file, imgdir);
+        start2 = clock();
+        vector<Mat> images;
+        for (int i = 0; i < training.size(); i++) {
+            string file = get<1>(training[i]);
+            Mat img = imread(file, CV_LOAD_IMAGE_COLOR);
+            images.push_back(img);
+            cout << "Reading file: " << file << endl;
+        }
+        //create training set
+        OpenCVSIFTLBPExtractor siftLbpExtractor;
+        Mat siftLbpTrainingSet;
+        siftLbpExtractor.process_sift_lbp_images(images, dict, siftLbpTrainingSet);
+        cout << "Training set size: " << siftLbpTrainingSet.size() << endl;
+
         //store the training features
         FileStorage fs2(output_training_desc, FileStorage::WRITE);
-        fs2 << "training_set" << dst;
+        fs2 << "features" << siftLbpTrainingSet;
         fs2.release();
+
+        //copy contents of vector to float array
+        printf("Training set extraction lasted : %.3f ms\r\n", (clock() - start2) / 1000.0);
+    } else if (feature_type == "sift-lbp-color") {
+        cout << "SIFT-LBP-Color mode" << endl;
+        ifstream dict_file(dictionary_file_name);
+        Mat dict;
+        if (!dict_file.good()) {
+            cout << "Creating dictionary " << endl;
+            start2 = clock();
+            //read images
+            Sampler s;
+            Dataset vocabDataset = s.getDataset(sample_file, imgdir);
+            vector<Mat> images;
+            for (int i = 0; i < vocabDataset.size(); i++) {
+                Mat img = imread(get<1>(vocabDataset[i]), CV_LOAD_IMAGE_COLOR);
+                images.push_back(img);
+            }
+            OpenCVSIFTLBPExtractor extractor;
+            OpenCVSIFTDescExtractor siftExtractor;
+            ColorFeatureExtractor colorExtractor;
+            OpenCVLBPDescExtractor lbpExtractor;
+
+            Mat siftLbpColorDesc;
+            extractor.create_sift_lpb_color_dictionary(images, siftExtractor,
+                    lbpExtractor, colorExtractor, siftLbpColorDesc);
+
+            dict = fe.create_dictionary(siftLbpColorDesc);
+            printf("Dictionary creation lasted: %.3f ms\r\n", (clock() - start2) / 1000.0);
+            //store the vocabulary
+            FileStorage fs(dictionary_file_name, FileStorage::WRITE);
+            fs << "vocabulary" << dict;
+            fs.release();
+        } else {
+            //else, read to dict
+            FileStorage fs(dictionary_file_name, FileStorage::READ);
+            fs["vocabulary"] >> dict;
+            fs.release();
+        }
+
+        //construct training set descriptors
+        Sampler sampler;
+        Dataset training = sampler.getDataset(sample_file, imgdir);
+        start2 = clock();
+        vector<Mat> images;
+        for (int i = 0; i < training.size(); i++) {
+            string file = get<1>(training[i]);
+            Mat img = imread(file, CV_LOAD_IMAGE_COLOR);
+            images.push_back(img);
+            cout << "Reading file: " << file << endl;
+        }
+        //create training set
+        OpenCVSIFTLBPExtractor siftLbpExtractor;
+        Mat siftLbpTrainingSet;
+        siftLbpExtractor.process_sift_lbp_color_images(images,
+                dict, siftLbpTrainingSet);
+        cout << "Training set size: " << siftLbpTrainingSet.size() << endl;
+
+        //store the training features
+        FileStorage fs2(output_training_desc, FileStorage::WRITE);
+        fs2 << "features" << siftLbpTrainingSet;
+        fs2.release();
+
+        //copy contents of vector to float array
+        printf("Training set extraction lasted : %.3f ms\r\n", (clock() - start2) / 1000.0);
     }
+
     return 0;
 }

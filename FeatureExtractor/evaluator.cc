@@ -9,7 +9,6 @@
 #include "sampler.h"
 #include "opencv_sift_extractor.h"
 #include "feature_extractor.h"
-#include <opencv2/ml/ml.hpp>
 #include <sys/stat.h>
 
 using namespace std;
@@ -61,7 +60,7 @@ void Evaluator::evaluateUsingKNN(string sample_file, string img_file,
         cout << "Loading training set" << endl;
         Mat trainingData;
         FileStorage fs(training_set, FileStorage::READ);
-        fs["training_set"] >> trainingData;
+        fs["features"] >> trainingData;
         fs.release();
         cout << "Training set size: " << trainingData.size() << endl;
 
@@ -101,8 +100,11 @@ void Evaluator::evaluateUsingKNN(string sample_file, string img_file,
         cout << "Predicted category: " << cat << endl;
     }
     if (feature_type == "lbp") {
-        Ptr<FaceRecognizer> faceRecognizer;
+        cout << "Loading classifier" << endl;
+        Ptr<FaceRecognizer> faceRecognizer = createLBPHFaceRecognizer();
+        cout << training_set << endl;
         faceRecognizer->load(training_set);
+        cout << "Classifier loaded. Info:" << faceRecognizer->info() << endl;
         Mat img = imread(img_file, CV_LOAD_IMAGE_GRAYSCALE);
         int predicted_label = -1;
         double predicted_confidence = 0.0;
@@ -115,7 +117,7 @@ void Evaluator::evaluateUsingKNN(string sample_file, string img_file,
 void Evaluator::evaluate(string train_categories, string test_categories,
         string imgdir, string dict_file,
         string feature_type, string training_set_file,
-        const map<string, int>& categories, string output_predictions) {
+        const map<string, int>& categories) {
     if (feature_type == "sift") {
         cout << "Batch evaluation: SIFT" << endl;
         //load model
@@ -124,7 +126,7 @@ void Evaluator::evaluate(string train_categories, string test_categories,
         cout << "Loading training set" << endl;
         Mat trainingData;
         FileStorage fs(training_set_file, FileStorage::READ);
-        fs["training_set"] >> trainingData;
+        fs["features"] >> trainingData;
         fs.release();
         cout << "Training set size: " << trainingData.size() << endl;
 
@@ -171,37 +173,108 @@ void Evaluator::evaluate(string train_categories, string test_categories,
         //iterate the test set's features
         Mat predictionMat, n, d;
         knn.find_nearest(features, knn.get_max_k(), predictionMat, n, d);
-        //category -> true positives
-        map<int, int> tp, predictionCount, classCount;
-        int correctAnswers;
-        //iterate through the predictions to compute precision
+        cout << "Predictions: [true] [predicted]" << endl;
+        //iterate through the predictions
         for (int i = 0; i < features.rows; i++) {
             int pred = static_cast<int> (predictionMat.at<float>(i, 0));
             int truth = static_cast<int> (labels[i]);
 
-            cout << "Prediction: " << pred << "Truth: " << truth << endl;
-            if (pred == truth) {
-                ++correctAnswers;
-                ++tp[pred];
-            }
-            ++predictionCount[pred];
-            ++classCount[truth];
-        }
+            string predicted_class = get_associated_key(categories, pred);
+            string true_class = get_associated_key(categories, truth);
+            string file_name = get<1>(testDs[i]);
 
-        //compute Recall, Precision, F-Score
-        cout << "Recall: " << endl;
-        //        map<int, double> precision, recall;
-        for (map<int, int>::iterator it = classCount.begin(); it != classCount.end(); ++it) {
-            double r = tp[it->first] / it->second;
-            cout << "Class: " << it->first << " - " << r << endl;
-            //            recall[it->first] = r;
+            cout << file_name << "\t" << true_class << "\t" <<
+                    predicted_class << endl;
         }
-        cout << "Precision" << endl;
-        for (map<int, int>::iterator it = predictionCount.begin(); it != predictionCount.end(); ++it) {
-            double p = tp[it->first] / it->second;
-            cout << "Class: " << it->first << " - " << p << endl;
-            //            prediction[it->first] = p;
+    } else if (feature_type == "lbp") {
+        cout << "Loading classifier" << endl;
+        Ptr<FaceRecognizer> faceRecognizer = createLBPHFaceRecognizer();
+        cout << training_set_file << endl;
+        faceRecognizer->load(training_set_file);
+        cout << "Classifier loaded. Info:" << faceRecognizer->name() << endl;
+        Sampler s;
+        Dataset testDs = s.getDataset(test_categories, imgdir);
+        cout << "Predictions: [true] [predicted]" << endl;
+        for (int i = 0; i < testDs.size(); i++) {
+            //read images
+            string file_name = get<1>(testDs[i]);
+            string true_label = get<0>(testDs[i]);
+            Mat img = imread(file_name, CV_LOAD_IMAGE_GRAYSCALE);
+            Mat imgEq;
+            equalizeHist(img, imgEq);
+            int predicted_label = -1;
+            double predicted_confidence = 0.0;
+            faceRecognizer->predict(img, predicted_label, predicted_confidence);
+            string predicted_class = get_associated_key(categories, predicted_label);
+            cout << file_name << "\t" << true_label << "\t" <<
+                    predicted_class << endl;
         }
+    }
+}
+
+void Evaluator::evaluateSavedFiles(string train_file, string test_file,
+        string train_categories, string test_categories,
+        const map<string, int>& categories) {
+    cout << "YAML evaluation" << endl;
+    //load model
+    //load training data
+
+    cout << "Loading training set" << endl;
+    Mat trainingData;
+    FileStorage fs(train_file, FileStorage::READ);
+    fs["features"] >> trainingData;
+    fs.release();
+    cout << "Training set size: " << trainingData.size() << endl;
+
+    //convert training to something that can be read by knn
+    //prepare the map for training classes -> vector<int>
+    //process test dataset
+    Mat training_labels;
+    getLabelsForKnn(train_categories, categories, training_labels);
+
+    //declare KNN
+    int K = 32;
+    KNearest knn(trainingData, training_labels, Mat(), false, 32);
+
+    cout << "Loading test set" << endl;
+    Mat testData;
+    FileStorage fs3(test_file, FileStorage::READ);
+    fs3["features"] >> testData;
+    fs3.release();
+    cout << "Test set size: " << testData.size() << endl;
+
+    //convert training to something that can be read by knn
+    //prepare the map for training classes -> vector<int>
+    //process test dataset
+    //prepare the map for training classes -> vector<int>
+    cout << "Preparing test set labels" << endl;
+    Mat test_labels;
+    getLabelsForKnn(test_categories, categories, test_labels);
+    const float* p = (float*) (test_labels.ptr(0));
+    vector<float> labels(p, p + test_labels.cols);
+    predict(knn, testData, labels, test_categories, categories);
+}
+
+void Evaluator::predict(KNearest& knn, Mat& features,
+        const vector<float>& labels, string test_categories,
+        const map<string, int> & categories) {
+    Sampler s;
+    Dataset testDs = s.getDataset(test_categories, "");
+    //iterate the test set's features
+    Mat predictionMat, n, d;
+    knn.find_nearest(features, knn.get_max_k(), predictionMat, n, d);
+    cout << "Predictions: [true] [predicted]" << endl;
+    //iterate through the predictions
+    for (int i = 0; i < features.rows; i++) {
+        int pred = static_cast<int> (predictionMat.at<float>(i, 0));
+        int truth = static_cast<int> (labels[i]);
+
+        string predicted_class = get_associated_key(categories, pred);
+        string true_class = get_associated_key(categories, truth);
+        string file_name = get<1>(testDs[i]);
+
+        cout << file_name << "\t" << true_class << "\t" <<
+                predicted_class << endl;
     }
 }
 
@@ -211,42 +284,59 @@ void Evaluator::evaluate(string train_categories, string test_categories,
  */
 int main(int argc, char** argv) {
     if (argc == 1) {
-        cout << "Batch classification: usage: ./evaluator "
+        cout << "Batch classification: usage: ./evaluator single "
                 "[train categories file] [test categories file] "
                 "[imgdir] [dictionary] "
                 "[feature type] [model file / training set] "
-                "[category file name] [output predictions]" << endl;
-        cout << "Single classification: usage: ./evaluator [train categories file] "
-                "single [img/dir] [dictionary] "
-                "[feature type] [training set / model file] "
                 "[category file name]" << endl;
+        cout << "Single classification: usage: ./evaluator single [train set] "
+                " [img] [dictionary] feature type] [training set / model file] "
+                "[category file name]" << endl;
+        cout << "Test your YAML: ./evaluation [train yaml] [test yaml] "
+                "[train categories] [test categories] [feature type] "
+                "[dictionary] [categories]" << endl;
         return 0;
     }
 
-    string train_categories = argv[1];
-    string test_categories = argv[2];
-    string imgdir_file = argv[3];
-    string dict_file = argv[4];
-    string feature_type = argv[5];
-    string model_file = argv[6];
-    string category_file_name = argv[7];
-
-    /*--
-     * Loading category file
-     * --
+    /* The variables' names are quite confusing now. Just refer to the above usage
      */
-    map<string, int> categories;
-    categoryMap(category_file_name, categories);
+    string mode = argv[1];
 
     Evaluator e;
     struct stat sb;
-    if (stat(imgdir_file.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode)) {
-        string output_predictions = argv[8];
-        e.evaluate(train_categories, test_categories, imgdir_file, dict_file, feature_type, model_file,
-                categories, output_predictions);
-    } else {
-        if (test_categories == "single") {
-            e.evaluateUsingKNN(train_categories, imgdir_file, dict_file, feature_type, model_file, categories);
-        }
+    if (mode == "batch") {
+        string train_categories = argv[2];
+        string test_categories = argv[3];
+        string imgdir_file = argv[4];
+        string dict_file = argv[5];
+        string feature_type = argv[6];
+        string model_file = argv[7];
+        string category_file_name = argv[8];
+
+        map<string, int> categories;
+        categoryMap(category_file_name, categories);
+        e.evaluate(train_categories, test_categories, imgdir_file,
+                dict_file, feature_type, model_file, categories);
+    } else if (mode == "yaml") {
+        string train_yaml = argv[2];
+        string test_yaml = argv[3];
+        string train_sample_file = argv[4];
+        string test_sample_file = argv[5];
+        string category_file_name = argv[6];
+        map<string, int> categories;
+        categoryMap(category_file_name, categories);
+        e.evaluateSavedFiles(train_yaml, test_yaml, train_sample_file,
+                test_sample_file, categories);
+    } else if (mode == "single") {
+        string train_categories = argv[2];
+        string imgdir_file = argv[3];
+        string dict_file = argv[4];
+        string feature_type = argv[5];
+        string model_file = argv[6];
+        string category_file_name = argv[7];
+
+        map<string, int> categories;
+        categoryMap(category_file_name, categories);
+        e.evaluateUsingKNN(train_categories, imgdir_file, dict_file, feature_type, model_file, categories);
     }
 }

@@ -5,6 +5,7 @@
 #include <vector>
 #include <stdlib.h>
 #include <map>
+#include <boost/algorithm/string.hpp>
 
 inline std::vector<std::string> &split(const std::string &s, char delim,
         std::vector<std::string> &elems) {
@@ -28,7 +29,8 @@ inline void categoryMap(std::string sample_file_name,
     std::string cat;
     int i = 0;
     while (getline(file, cat)) {
-        categories[cat] = ++i;
+        boost::algorithm::trim(cat);
+        categories.insert(std::make_pair(cat,++i));
     }
 }
 
@@ -50,3 +52,4 @@ inline std::string get_associated_key(std::map<std::string, int> categories,
     }
     return "N/A";
 }
+
